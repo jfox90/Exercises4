@@ -1,0 +1,337 @@
+---
+name: Gaetano Dona-Jehan and Jordan Fox
+title: "Exercises #4: Data Mining and Statistical Learning"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(arules)  # has a big ecosystem of packages built around it
+library(arulesViz)
+library(igraph)
+library(ggplot2)
+library(LICORS)  # for kmeans++
+library(foreach)
+library(mosaic)
+library(nnet)
+library(randomForest)
+library(rpart)
+library(gbm)
+```
+
+## #1) Clustering and PCA with Wine Data
+
+We're asked to compare the results between clustering and PCA using a dataset on the chemical composition of over 6,000 wines.
+
+```{r echo = FALSE, message = FALSE, output = FALSE}
+wine <- read.csv("C:/Users/USER/Documents/DataMining_StatLearning/hw4/wine.txt")
+winecopy <- wine
+wine1 <- wine[,-(13)]
+wine %>% 
+    pivot_longer(1:12, names_to = "chemicals", values_to = "quantity") %>%
+    ggplot(aes(quantity, fill = color)) +
+    geom_density(alpha = 0.5)+
+    facet_wrap(.~chemicals, scale = "free")
+```
+
+From what we can see, there are some similarities in the chemical composition between the two types of wine. However, there are also some differences in the chemical composition. White Wine tends to contain less chlorides than red wine, but has a higher quantity of total sulfur dioxide. What is interesting is that the pH levels between the two wines are not that distinct; The way that people normally talk about would suggest that red wine is significantly more acidic than white wine, but the explanatory analysis of these wines suggest otherwise.  
+
+
+
+To start our analysis, we will first see if we are able to distinguish the reds from the white using the k-means clustering method and comparing it to the principal component analysis method.
+
+
+### Clustering
+
+First, we drop the 13th column, as it is a non-numeric column, and we want to re-scale the data. We then perform a k-means clustering on our data where we create two clusters to represent each wine.  
+
+```{r echo = FALSE, message = FALSE}
+winecopy <- wine
+wine1 <- wine[,-(13)]
+X = wine1
+X = scale(X, center=TRUE, scale=TRUE)
+```
+
+
+```{r echo = FALSE, message = FALSE}
+clust1 = kmeans(X, 2, nstart=25)
+```
+
+```{r echo = FALSE, message = FALSE}
+
+ggplot(wine) + 
+  geom_point(aes(chlorides, alcohol, color=factor(clust1$cluster))) +
+  facet_wrap(~ color)
+
+ggplot(wine) + 
+  geom_point(aes(total.sulfur.dioxide, alcohol, color=factor(clust1$cluster))) +
+  facet_wrap(~ color)
+```
+As we can see, the two chemicals that might be best to use to differentiate red and white wine are the quantity of chlorides and total sulfur dioxide. Looking at the above figures, it would seem that regular clustering method works relatively well as it correctly clustered most of wines according to the color. 
+
+### Principal Component Analysis
+
+Now, we'll use PCA to see if it can differentiate between different types of wines given our data. Before our analysis, we drop columns 12 and 13 because we want this to be an unsupervised task, using only the eleven chemical components. 
+```{r message = FALSE, echo = FALSE}
+wine <- winecopy
+```
+
+```{r message = FALSE, echo = FALSE}
+wine2 <- wine[,-(12:13)]
+PCAwine = prcomp(wine2, scale=TRUE, rank=7)
+PCAwine$rotation
+summary(PCAwine)
+```
+
+
+```{r message = FALSE, echo = FALSE}
+loadings_summary1 = PCAwine$rotation %>%
+  as.data.frame() %>%
+  rownames_to_column('Chemical')
+
+
+winetest = merge(wine, PCAwine$x[,1:6], by="row.names")
+winetest = winetest[,-(1)]
+
+winetest$color <- as.factor(winetest$color)
+
+#lm1 = lm(quality ~ PC1 + PC2 + PC3 + PC4 + PC5 + PC6, data=winetest)
+#summary(lm1)
+
+```
+
+We can see that 7 principal components seem to explain about 90% of the variation in our data. However, it's not clear whether these components represent white or red wines.
+
+In the end, we defer to clustering for classifying red and white wines using only their chemical properties. 
+
+\pagebreak
+
+```{r,echo = FALSE, message = FALSE, warning = FALSE}
+library(tidyverse)
+
+data <- read.csv('C:/Users/USER/Documents/DataMining_StatLearning/hw4/social_marketing.txt')
+
+```
+
+# 2) Identifying Market Segments: NutrientH20's Twitter Data
+
+We're given data set made up of the total number of times that a particular user (row)
+tweeted about a particular subject (column) over a week-long period in June of 2014, and
+are asked to identify any market segments that stand out. There are over 30 topics listed, and 
+include chatter, current events, travel, photo sharing, tv/film, sports, food, politics
+family, home/garden, music, news, gaming, shopping, and so on. 
+
+At a glance, there are several seemingly correlated topics. One might expect cooking and
+sports fandom to be associated, or even family and religion. Additionally, one could reason that
+someone who is into television/film might also be into art, or politics. Similarly, someone
+into personal fitness might be interested in health and nutrition, or sports. 
+
+For our analysis, we decide to use principal component analysis. This will be useful because there are many columns, and many seemingly 
+related interests; if these interests are as associated as we believe, then there should be several potential market segments
+that we can identify by collapsing these 30+ columns into just a handful. 
+
+The results are printed below.
+
+
+### Principal Component Analysis, Rank = 4
+```{r, echo = FALSE, message = FALSE}
+Z = data[,c(2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33)]
+Z = scale(Z, center = TRUE, scale = FALSE)
+pc_Z = prcomp(Z, rank=4)
+pc_Z$rotation
+summary(pc_Z)
+```
+
+When we collapse our data into four principal components, we can identify four disparate groups based on their interests. These alone explain over 55% of the variation in the original 30+ columns of data. While additional components can increase the explained variation, for the most part these increases are marginal (2-3%) and aren't large enough to constitute what we'd like to call "market segments". 
+
+In the next section, we're going to try and isolate the interests of these market segments, and use PCA further to see how much
+information/variance we can preserve by collapsing these them into a single principal component. If these principal components are indeed separate market segments, then much of the information should be preserved when we collapse the interests that make them up into a single component. If this is the case, we report the identified segments below. 
+
+
+## Fitness Buffs
+
+The first principal component appears to be made up of people who tweet about photo sharing, cooking, nutrition, outdoors, and personal fitness. We dub this group the "fitness gurus".
+
+Now, we'll collapse these interests into one group to see how much of the information we lose.
+
+```{r,echo = FALSE, message = FALSE}
+Z = data[,c(5,17, 20, 33)]
+Z = scale(Z, center = TRUE, scale = FALSE)
+pc_Z = prcomp(Z, rank=2)
+pc_Z$rotation
+summary(pc_Z)
+
+```
+If we were to collapse these four components into a single component, we can see that we'd lose about 43% of the information in the process.
+This indicates that there may be a second market segment within these four interest. We can see that the first component is made up of people who primarily tweet about health/nutrition, personal fitness, and cooking, whereas the second component is made up of photo sharing and cooking. These might represent two distinct groups within our market segment: those whose interests are focused around fitness and wellness, and those who enjoy cooking and sharing their meals on social media. 
+
+## College Gamers
+
+The next segment that stands out as a potential market segment are people who tweet about college and online gaming from the second principal component. This is not very surprising, considering that most online gaming tends to skew towards educated groups. A Pew survey from 2003 noted that over 70% of college students reported playing a game on a PC or online, and we could reasonably expect this
+number to have grown from 2003 to 2014. 
+
+```{r,echo = FALSE, message = FALSE}
+Z = data[,c(18,15)]
+Z = scale(Z, center = TRUE, scale = FALSE)
+pc_Z = prcomp(Z, rank=1)
+pc_Z$rotation
+summary(pc_Z)
+
+```
+
+The results from summary(pc_z) tell us that by collapsing tweets about college/university and online gaming into
+one component, that we would only lose about 12% of the data in that process. We argue that this is a good second candidate for 
+a market segment, which we will characterize as *college gamers*. 
+
+
+## Urban Professionals
+
+Next, it appears that people who tweet about politics also tweet about traveling and computers. 
+Let's see how much information is preserved when we collapse this into two principal components:
+```{r,echo = FALSE, message = FALSE}
+Z = data[,c(4,22,9)]
+Z = scale(Z, center = TRUE, scale = FALSE)
+pc_Z = prcomp(Z, rank=2)
+pc_Z$rotation
+summary(pc_Z)
+
+```
+We can see that by collapsing tweets about computers, politics, and traveling into two components, we're able to preserve 95% of the information we had before. The first principal component preserves about 80% of the variation from all three columns. We argue that the users tweeting about these subjects might be aptly described as urban professionals. These may be highly-educated, politically-engaged, tech-savvy people. 
+
+## Media Socialites
+
+Next, based on the third principal component, it looks like chatter and photo sharing are pretty strongly associated. We also include two other seemingly correlated subjects, beauty and shopping into the analysis.
+
+```{r,echo = FALSE, message = FALSE}
+#Z = data[,c(2,24,16,29)]
+
+Z = data[,c(2,5,16)]
+Z = scale(Z, center = TRUE, scale = FALSE)
+pc_Z = prcomp(Z, rank=1)
+pc_Z$rotation
+summary(pc_Z)
+```
+By collapsing these four into one principal component, it looks like we're able to maintain over 70% of the variation in those four columns. We argue that this is a pretty strong indication of a market segment. 
+
+## Conclusion
+
+In total, we were able to identify 4 sizeable market segments. These were the *Fitness Buffs*, individuals whose tweets fell into the photo sharing, cooking, nutrition, and fitness categories. Next, we identified the *College Gamers*, whose posts were centered around university life and online gaming. Then, we uncovered the *Urban Professionals*, who mainly discussed politics, traveling, and computers. Lastly, we found the *Media Socialites*, who were people that tweeted about chatter, photo sharing, beauty and shopping.
+
+\pagebreak
+
+# #3) Text Association and Groceries
+
+Next, we're given a dataset on several thousand grocery shopping bundles. We're asked to
+find any interesting associations between purchases. First, we'll do a little visual inspection. 
+
+```{r, echo = FALSE, message = FALSE}
+groceries <- read.transactions("C:/Users/USER/Documents/DataMining_StatLearning/hw4/groceries.txt", sep = ",")
+groceriescopy <- groceries
+```
+
+```{r, eval = FALSE, echo = FALSE, message = FALSE}
+#### What are the most frequent items?
+summary(groceries)
+```
+
+
+```{r , eval = FALSE, echo = FALSE, message = FALSE, output = FALSE}
+#### Visualize Freuqency of Items that appear in 5% of the baskets and the top 20 most commonly bought items 
+itemFrequencyPlot(groceries, support = 0.05)
+```
+### Relative Frequency of Items in Baskets
+
+```{r echo = FALSE, message = FALSE}
+itemFrequencyPlot(groceries, topN = 20)
+```
+Here, we can see that the five most frequently bought items are whole milk, other vegetables, rolls/buns, soda, and yogurt. Whole milk appears in
+over 1/4 of grocery baskets, whereas vegetables and rolls appear in about 1/5 baskets. Yogurt, soda, and bottled water are in just over 10% of baskets, too.
+
+Next, we'll look at a Sparse Matrix to see if there are any visually apparent associations between bundles.
+
+### Sparse Matrix: Identifying Popular Items Visually
+
+```{r, eval = FALSE, echo = FALSE, message = FALSE, output = FALSE}
+### Plotting Sparse Matrix
+image(sample(groceries, 100))
+```
+Although it's not clear which items are in what columns, it's clear that certain items
+appear in baskets more frequently than others. Some columns are populated enough to almost
+take on a piecemeal line; these are items likely items like whole milk and vegetables, of which at least
+one has a 1/2 chance of showing up in any given shopping cart going through the checkout. 
+
+### 10 Prominent Associations
+```{r echo = FALSE, message = FALSE}
+groceryrules <- apriori(groceries, parameter = list(support = 0.007, confidence = 0.25, minlen = 2))
+arules::inspect(groceryrules[1:10])
+```
+Here, we see 10 product associations that we were able to uncover. Some that make sense are herbs and other/root vegetables, baking powder/flour and whole milk, specialty bars and soda, and grapes and vegetables. Next, we'll inspect the associations with the top five lifts.
+
+### Identifying Likely Complements
+```{r echo = FALSE, message = FALSE}
+#### Sort by top 5 lift
+arules::inspect(sort(groceryrules, by = "lift")[1:5])
+#### Lift implies that someone who buys herbs are 4 times more likely to buy root vegetables. 
+```
+We can see that customers who buy herbs are about four times as likely to buy roots than other customers. Customers who buy berries are almost three times as likely to buy whipped cream, and those who buy tropical fruit and whole milk tend to be four times as likely to buy root vegetables. These may represent people with sweet tooths and vegetarians, respectively. 
+
+### Most Associated Purchases
+
+```{r echo = FALSE, message = FALSE}
+#### Sort by top support, meaning how frequently it appears
+arules::inspect(sort(groceryrules, by = "support")[1:5])
+```
+
+\
+
+When we limit the associations to the those that appear the most, what appears are associations between the most commonly bought items, namely whole milk, other vegetables, rolls/buns, yogurt, and root vegetables. It makes sense that whole milk appears in many of these associations, given its prominence in the human diet (breakfast cereal, afternoon snacks, coffee, etc...). Its association with vegetables is also unsurprising, given that meals tend to feature a side dish; the same applies to rolls/buns. 
+
+\pagebreak
+
+# #4) Text Analysis (Incomplete)
+
+This problem was not able to be finished. However, we still describe the process we would have taken. The code we would have used is included in the .Rmd file, and while most of it runs in R Markdown chunks, these are all set to eval=FALSE and echo = FALSE due to errors and to allow the document to knit.
+
+
+
+```{r, eval = FALSE, echo = FALSE}
+readerPlain = function(fname){readPlain(elem=list(content=readLines(fname)), 
+							id=fname, language='en') }
+
+file_list = Sys.glob('C:/Users/USER/Documents/DataMining_StatLearning/hw4/C50train/*/*')
+text = lapply(file_list, readerPlain) 
+
+mynames = file_list %>%
+	{ strsplit(., '/', fixed=TRUE) } %>%
+	{ lapply(., tail, n=2) } %>%
+	{ lapply(., paste0, collapse = '') } %>%
+	unlist
+```
+
+
+```{r, eval = FALSE, output = FALSE, echo = FALSE}
+names(text) = mynames
+documents_raw = Corpus(VectorSource(text))
+my_documents = documents_raw
+my_documents = tm_map(my_documents, content_transformer(tolower)) 
+my_documents = tm_map(my_documents, content_transformer(removeNumbers))
+my_documents = tm_map(my_documents, content_transformer(removePunctuation)) 
+my_documents = tm_map(my_documents, content_transformer(stripWhitespace))
+```
+```{r, echo = FALSE, eval = FALSE}
+stopwords("en")
+stopwords("SMART")
+?stopwords
+my_documents = tm_map(my_documents, content_transformer(removeWords), stopwords("en"))
+DTM_text = DocumentTermMatrix(my_documents)
+DTM_text
+class(DTM_text)
+```
+
+
+The process we would have like to have taken would have been as follows. After initializing a corpus for each author, we would have then then removed punctuation, numbers, removed white space, converted our text to lowercase, and removed stop words.
+
+Next, we would have created term-document matrices for each of our authors. Next, we would have created weighted term-document matrices, with the intent of isolating words that appeared most frequently. From there, we would have split these into test/train splits.
+
+At that point, we could have then used a number of techniques to draw comparisons between texts or attribute authorship given a particular text. We could use KNN to compare how one document compares to others most like it, or cluster based on the frequency of a set of words particular to an author. 
